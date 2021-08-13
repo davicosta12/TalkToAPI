@@ -12,8 +12,15 @@ namespace TalkToApi.Helpers
     {
         public DTOMapperProfile()
         {
-            //CreateMap<Palavra, PalavraDTO>();
-            //CreateMap<PaginationList<Palavra>, PaginationList<PalavraDTO>>();
+            CreateMap<ApplicationUser, UsuarioDTO>()
+                .ForMember(dest => dest.Nome,
+                orig => orig.MapFrom(src => src.FullName));
+
+            CreateMap<Mensagem, MensagemDTO>();
+
+            CreateMap<ApplicationUser, UsuarioDTOSemHyperLink>()
+                 .ForMember(dest => dest.Nome,
+                orig => orig.MapFrom(src => src.FullName));
         }
     }
 }

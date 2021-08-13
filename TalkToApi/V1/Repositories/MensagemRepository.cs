@@ -28,5 +28,15 @@ namespace TalkToApi.V1.Repositories
             _banco.SaveChanges();
         }
 
+        public void Atualizar(Mensagem mensagem)
+        {
+            _banco.Mensagem.Update(mensagem);
+            _banco.SaveChanges();
+        }
+
+        public Mensagem Obter(int id)
+        {
+            return _banco.Mensagem.Find(id);
+        }
     }
 }

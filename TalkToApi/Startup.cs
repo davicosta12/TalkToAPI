@@ -25,6 +25,7 @@ using System.Text;
 using System.Threading.Tasks;
 using TalkToApi.DataBase;
 using TalkToApi.Helpers;
+using TalkToApi.Helpers.Constants;
 using TalkToApi.V1.Models;
 using TalkToApi.V1.Repositores;
 using TalkToApi.V1.Repositores.Contracts;
@@ -65,15 +66,42 @@ namespace TalkToApi
                 cfg.UseSqlite("Data Source=DataBase\\TalkTo.db");
             });
 
+            services.AddCors(cfg =>
+            {
+                cfg.AddDefaultPolicy(policy =>
+                {
+                    policy
+                        .WithOrigins("https://localhost:44389")
+                        .AllowAnyMethod()
+                        .SetIsOriginAllowedToAllowWildcardSubdomains() // Habilitar CROS para todos os subdomínios
+                        .AllowAnyHeader();
+                });
+
+                //Habilitar todos os sites, com restrição.
+                cfg.AddPolicy("AnyOrigin", policy =>
+                {
+                    policy.AllowAnyOrigin()
+                        .WithMethods("GET")
+                        .AllowAnyHeader();
+                });
+            });
+
             services.AddScoped<IMensagemRepository, MensagemRepository>();
             services.AddScoped<IUsuarioRepository, UsuarioRepository>();
             services.AddScoped<ITokenRepository, TokenRepository>();
 
             services.AddControllers(cfg =>
             {
-                //cfg.ReturnHttpNotAcceptable = true; //406
-                //cfg.InputFormatters.Add(new XmlSerializerInputFormatter(cfg));
-                //cfg.OutputFormatters.Add(new XmlSerializerOutputFormatter());
+                cfg.ReturnHttpNotAcceptable = true; //406
+                cfg.InputFormatters.Add(new XmlSerializerInputFormatter(cfg));
+                cfg.OutputFormatters.Add(new XmlSerializerOutputFormatter());
+
+                var jsonOutputFormatter = cfg.OutputFormatters.OfType<NewtonsoftJsonOutputFormatter>().FirstOrDefault();
+
+                if (jsonOutputFormatter != null)
+                {
+                    jsonOutputFormatter.SupportedMediaTypes.Add(CustomMediaType.Hateoas);
+                }
             })
                .SetCompatibilityVersion(CompatibilityVersion.Version_3_0)
                .AddNewtonsoftJson(options =>
@@ -181,6 +209,8 @@ namespace TalkToApi
             app.UseHttpsRedirection();
 
             app.UseRouting();
+
+            // app.UseCors("AnyOrigin"); // Desabilite quando for usar Atributos EnableCors/DisableCors
 
             app.UseAuthentication();
 

@@ -2,15 +2,17 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TalkToApi.DataBase;
 
 namespace TalkToApi.Migrations
 {
     [DbContext(typeof(TalkToContext))]
-    partial class TalkToContextModelSnapshot : ModelSnapshot
+    [Migration("20210809181420_Atualization")]
+    partial class Atualization
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -194,6 +196,7 @@ namespace TalkToApi.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Slogan")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("TwoFactorEnabled")
@@ -221,18 +224,12 @@ namespace TalkToApi.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTime?>("Atualizado")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTime>("Criado")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("DeId")
                         .IsRequired()
                         .HasColumnType("TEXT");
-
-                    b.Property<bool>("Excluido")
-                        .HasColumnType("INTEGER");
 
                     b.Property<string>("ParaId")
                         .IsRequired()

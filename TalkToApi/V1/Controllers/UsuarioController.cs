@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using AutoMapper;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -9,7 +11,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
 using System.Text;
-using System.Threading.Tasks;
+using TalkToApi.Helpers.Constants;
 using TalkToApi.V1.Models;
 using TalkToApi.V1.Models.DTO;
 using TalkToApi.V1.Repositores.Contracts;
@@ -19,9 +21,11 @@ namespace TalkToApi.V1.Controllers
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiExplorerSettings(GroupName = "v1.0")]
     [ApiVersion("1.0")]
+    [EnableCors("AnyOrigin")]
     [ApiController]
     public class UsuarioController : ControllerBase
     {
+        private readonly IMapper _mapper;
         private readonly IUsuarioRepository _usuarioRepository;
         private readonly ITokenRepository _tokenRepository;
         private readonly SignInManager<ApplicationUser> _signInManager;
@@ -30,24 +34,49 @@ namespace TalkToApi.V1.Controllers
         public UsuarioController(IUsuarioRepository usuarioRepository,
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager,
-            ITokenRepository tokenRepository)
+            ITokenRepository tokenRepository,
+            IMapper mapper)
         {
             _usuarioRepository = usuarioRepository;
             _signInManager = signInManager;
             _userManager = userManager;
             _tokenRepository = tokenRepository;
+            _mapper = mapper;
         }
 
         [Authorize]
-        [HttpGet("")]
-        public IActionResult ObterTodos()
+        [HttpGet("", Name = "UsuarioObterTodos")]
+        [DisableCors()]
+        public IActionResult ObterTodos([FromHeader(Name = "Accept")] string mediaType)
         {
-            return Ok(_userManager.Users);
+            var usuariosAppUser = _userManager.Users.ToList();
+
+            if (mediaType == CustomMediaType.Hateoas)
+            {
+                var listaUsuarioDTO = _mapper.Map<List<ApplicationUser>, List<UsuarioDTO>>(usuariosAppUser);
+
+                foreach (var usuarioDTO in listaUsuarioDTO)
+                {
+                    usuarioDTO.Links.Add(new LinkDTO("_self", Url.Link("UsuarioObter", new { id = usuarioDTO.Id }), "GET"));
+                }
+
+                var lista = new ListaDTO<UsuarioDTO>() { Lista = listaUsuarioDTO };
+                lista.Links.Add(new LinkDTO("_self", Url.Link("UsuarioObterTodos", null), "GET"));
+
+                return Ok(lista);
+            }
+            else
+            {
+                //TODO - AutoMapper -> Converter para Objeto sem HyperLink.
+                var usuarioResult = _mapper.Map<List<ApplicationUser>, List<UsuarioDTOSemHyperLink>>(usuariosAppUser);
+                return Ok(usuarioResult);
+            }
+
         }
 
         [Authorize]
-        [HttpGet("{id}")]
-        public IActionResult ObterUsuario(string id)
+        [HttpGet("{id}", Name = "UsuarioObter")]
+        public IActionResult ObterUsuario(string id, [FromHeader(Name = "Accept")] string mediaType)
         {
             var usuario = _userManager.FindByIdAsync(id).Result;
             if (usuario == null)
@@ -55,7 +84,118 @@ namespace TalkToApi.V1.Controllers
                 return NotFound();
             }
 
-            return Ok(usuario);
+            if (mediaType == CustomMediaType.Hateoas)
+            {
+                var usuarioDTOdb = _mapper.Map<ApplicationUser, UsuarioDTO>(usuario);
+                usuarioDTOdb.Links.Add(new LinkDTO("_self", Url.Link("UsuarioObter", new { id = usuarioDTOdb.Id }), "GET"));
+                usuarioDTOdb.Links.Add(new LinkDTO("_atualizar", Url.Link("UsuarioAtualizar", new { id = usuarioDTOdb.Id }), "PUT"));
+
+                return Ok(usuarioDTOdb);
+            }
+            else
+            {
+                var usuarioResult = _mapper.Map<ApplicationUser, UsuarioDTOSemHyperLink>(usuario);
+                return Ok(usuarioResult);
+            }
+        }
+
+        [HttpPost("", Name = "UsuarioCadastrar")]
+        public IActionResult Cadastrar([FromBody] UsuarioDTO usuarioDTO, [FromHeader(Name = "Accept")] string mediaType)
+        {
+            if (ModelState.IsValid)
+            {
+                ApplicationUser usuario = new();
+                usuario.FullName = usuarioDTO.Nome;
+                usuario.UserName = usuarioDTO.Email;
+                usuario.Email = usuarioDTO.Email;
+
+                var resultado = _userManager.CreateAsync(usuario, usuarioDTO.Senha).Result;
+
+                if (!resultado.Succeeded)
+                {
+                    List<string> erros = new();
+                    foreach (var erro in resultado.Errors)
+                    {
+                        erros.Add(erro.Description);
+                    }
+                    return UnprocessableEntity(erros);
+                }
+                else
+                {
+                    if (mediaType == CustomMediaType.Hateoas)
+                    {
+                        var usuarioDTOdb = _mapper.Map<ApplicationUser, UsuarioDTO>(usuario);
+                        usuarioDTOdb.Links.Add(new LinkDTO("_self", Url.Link("UsuarioCadastrar", new { id = usuarioDTOdb.Id }), "POST"));
+                        usuarioDTOdb.Links.Add(new LinkDTO("_obter", Url.Link("UsuarioObter", new { id = usuarioDTOdb.Id }), "GET"));
+                        usuarioDTOdb.Links.Add(new LinkDTO("_atualizar", Url.Link("UsuarioAtualizar", new { id = usuarioDTOdb.Id }), "PUT"));
+
+                        return Ok(usuarioDTOdb);
+                    }
+                    else
+                    {
+                        var usuarioResult = _mapper.Map<ApplicationUser, UsuarioDTOSemHyperLink>(usuario);
+                        return Ok(usuarioResult);
+                    }
+
+                }
+            }
+            else
+            {
+                return UnprocessableEntity(ModelState);
+            }
+        }
+
+        [Authorize]
+        [HttpPut("{id}", Name = "UsuarioAtualizar")]
+        public IActionResult Atualizar(string id, [FromBody] UsuarioDTO usuarioDTO, [FromHeader(Name = "Accept")] string mediaType)
+        {
+            ApplicationUser usuario = _userManager.GetUserAsync(HttpContext.User).Result;
+            if (usuario.Id != id)
+            {
+                return Forbid();
+            }
+
+            if (ModelState.IsValid)
+            {
+                usuario.FullName = usuarioDTO.Nome;
+                usuario.UserName = usuarioDTO.Email;
+                usuario.Email = usuarioDTO.Email;
+                usuario.Slogan = usuarioDTO.Slogan;
+
+                var resultado = _userManager.UpdateAsync(usuario).Result;
+                _userManager.RemovePasswordAsync(usuario);
+                _userManager.AddPasswordAsync(usuario, usuarioDTO.Senha);
+
+                if (!resultado.Succeeded)
+                {
+                    List<string> erros = new();
+                    foreach (var erro in resultado.Errors)
+                    {
+                        erros.Add(erro.Description);
+                    }
+                    return UnprocessableEntity(erros);
+                }
+                else
+                {
+                    if (mediaType == CustomMediaType.Hateoas)
+                    {
+                        var usuarioDTOdb = _mapper.Map<ApplicationUser, UsuarioDTO>(usuario);
+                        usuarioDTOdb.Links.Add(new LinkDTO("_self", Url.Link("UsuarioAtualizar", new { id = usuarioDTOdb.Id }), "PUT"));
+                        usuarioDTOdb.Links.Add(new LinkDTO("_obter", Url.Link("UsuarioObter", new { id = usuarioDTOdb.Id }), "GET"));
+
+                        return Ok(usuarioDTOdb);
+                    }
+                    else
+                    {
+                       var usuarioResult = _mapper.Map<ApplicationUser, UsuarioDTOSemHyperLink>(usuario);
+                        return Ok(usuarioResult);
+                    }
+                }
+            }
+            else
+            {
+                return UnprocessableEntity(ModelState);
+            }
         }
 
         [HttpPost("login")]
@@ -64,6 +204,7 @@ namespace TalkToApi.V1.Controllers
             ModelState.Remove("Nome");
             ModelState.Remove("ConfirmacaoSenha");
             ModelState.Remove("Slogan");
+            ModelState.Remove("Id");
 
             if (ModelState.IsValid)
             {
@@ -108,80 +249,6 @@ namespace TalkToApi.V1.Controllers
             return GerarToken(usuario);
         }
 
-        [HttpPost("")]
-        public IActionResult Cadastrar([FromBody]UsuarioDTO usuarioDTO)
-        {
-            if (ModelState.IsValid)
-            {
-                ApplicationUser usuario = new();
-                usuario.FullName = usuarioDTO.Nome;
-                usuario.UserName = usuarioDTO.Email;
-                usuario.Email = usuarioDTO.Email;
-                usuario.Slogan = usuarioDTO.Slogan;
-
-                var resultado = _userManager.CreateAsync(usuario, usuarioDTO.Senha).Result;
-
-                if (!resultado.Succeeded)
-                {
-                    List<string> erros = new();
-                    foreach (var erro in resultado.Errors)
-                    {
-                        erros.Add(erro.Description);
-                    }
-                    return UnprocessableEntity(erros);
-                }
-                else
-                {
-                    return Ok(usuario);
-                }
-            }
-            else
-            {
-                return UnprocessableEntity(ModelState);
-            }
-        }
-
-        [Authorize]
-        [HttpPut("{id}")]
-        public IActionResult Atualizar(string id, [FromBody]UsuarioDTO usuarioDTO)
-        {
-            ApplicationUser usuario = _userManager.GetUserAsync(HttpContext.User).Result;
-            if (usuario.Id != id)
-            {
-                return Forbid();
-            }
-
-            if (ModelState.IsValid)
-            {
-                usuario.FullName = usuarioDTO.Nome;
-                usuario.UserName = usuarioDTO.Email;
-                usuario.Email = usuarioDTO.Email;
-                usuario.Slogan = usuarioDTO.Slogan;
-
-                var resultado = _userManager.UpdateAsync(usuario).Result;
-                _userManager.RemovePasswordAsync(usuario);
-                _userManager.AddPasswordAsync(usuario, usuarioDTO.Senha);
-
-                if (!resultado.Succeeded)
-                {
-                    List<string> erros = new();
-                    foreach (var erro in resultado.Errors)
-                    {
-                        erros.Add(erro.Description);
-                    }
-                    return UnprocessableEntity(erros);
-                }
-                else
-                {
-                    return Ok(usuario);
-                }
-            }
-            else
-            {
-                return UnprocessableEntity(ModelState);
-            }
-        }
-
         private IActionResult GerarToken(ApplicationUser usuario)
         {
             var token = BuildToken(usuario);
@@ -201,7 +268,6 @@ namespace TalkToApi.V1.Controllers
 
             return Ok(token);
         }
-
 
         private TokenDTO BuildToken(ApplicationUser usuario)
         {
